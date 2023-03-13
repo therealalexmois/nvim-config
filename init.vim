@@ -21,15 +21,13 @@ command! MakeTags !ctags -R .
 
 " FILE BROWSING:
 
-" Tweaks for browsing
+" Netrw file explorer settings
 let g:netrw_banner=0        " disable annoying banner
-let g:netrw_browse_split=4  " open in prior window
-let g:netrw_altv=1          " open splits to the right
 let g:netrw_liststyle=3     " tree view
-let g:netrw_list_hide=netrw_gitignore#Hide()
-let g:netrw_list_hide.=',\(^\|\s\s\)\zs\.\S\+'
+let g:netrw_browse_split=3  " open in prior window
 
 set mouse=a  " enable mouse at encoding=utf-8
+set encoding=utf-8
 set number
 set noswapfile
 set scrolloff=7
@@ -45,8 +43,12 @@ set runtimepath^=~/.vim/bundle/ctrlp.vim
 
 filetype indent on      " load filetype-specific indent files
 
-inoremap jk <esc>
+set smartindent
+set tabstop=2
+set expandtab
+set shiftwidth=2
 
+inoremap jk <esc>
 
 call plug#begin('~/.vim/plugged')
 
@@ -56,7 +58,12 @@ Plug 'hrsh7th/cmp-nvim-lsp'
 Plug 'saadparwaiz1/cmp_luasnip'
 Plug 'L3MON4D3/LuaSnip'
 
-Plug 'preservim/nerdtree'
+Plug 'xiyaowong/nvim-transparent'
+Plug 'justinmk/vim-sneak'
+
+" Plug 'pocco81/auto-save.nvim'
+
+" Plug 'preservim/nerdtree'
 
 " color schemas
 Plug 'morhetz/gruvbox'  " colorscheme gruvbox
@@ -65,11 +72,25 @@ Plug 'kaicataldo/material.vim', { 'branch': 'main' }
 Plug 'ayu-theme/ayu-vim'
 
 " For JS/JSX
-Plug 'yuezk/vim-js'
+Plug 'pangloss/vim-javascript'
+Plug 'leafgarland/typescript-vim'
+Plug 'peitalin/vim-jsx-typescript'
 Plug 'maxmellon/vim-jsx-pretty'
+" TS from here https://jose-elias-alvarez.medium.com/configuring-neovims-lsp-client-for-typescript-development-5789d58ea9c
+
+Plug 'nvim-lua/plenary.nvim'
+Plug 'nvim-telescope/telescope.nvim', { 'tag': '0.1.0' }
+Plug 'nvim-telescope/telescope-fzf-native.nvim', { 'do': 'make' }
+
+Plug 'ray-x/lsp_signature.nvim'
+
+Plug 'ctrlpvim/ctrlp.vim'
 
 call plug#end()
 
+let mapleader = ","
+
+let g:sneak#label = 1
 
 colorscheme gruvbox
 " colorscheme OceanicNext
@@ -87,12 +108,11 @@ endif
 "let ayucolor="mirage"
 "colorscheme ayu
 
-
+nnoremap <leader>dd :Lexplore %:p:h<CR>
+nnoremap <Leader>da :Lexplore<CR>
 
 " turn off search highlight
 nnoremap ,<space> :nohlsearch<CR>
-
-
 
 lua << EOF
 -- Set completeopt to have a better completion experience
@@ -100,12 +120,13 @@ vim.o.completeopt = 'menuone,noselect'
 
 -- luasnip setup
 local luasnip = require 'luasnip'
+local async = require "plenary.async"
 
 -- nvim-cmp setup
 local cmp = require 'cmp'
 cmp.setup {
   completion = {
-    autocomplete = true
+    autocomplete = false
   },
   snippet = {
     expand = function(args)
@@ -117,7 +138,7 @@ cmp.setup {
     ['<C-n>'] = cmp.mapping.select_next_item(),
     ['<C-d>'] = cmp.mapping.scroll_docs(-4),
     ['<C-f>'] = cmp.mapping.scroll_docs(4),
-    ['<C-Space>'] = cmp.mapping.complete(),
+    ['<C-b>'] = cmp.mapping.complete(),
     ['<C-e>'] = cmp.mapping.close(),
     ['<CR>'] = cmp.mapping.confirm {
       behavior = cmp.ConfirmBehavior.Replace,
@@ -178,17 +199,46 @@ local on_attach = function(client, bufnr)
   buf_set_keymap('n', '<space>rn', '<cmd>lua vim.lsp.buf.rename()<CR>', opts)
   buf_set_keymap('n', '<space>ca', '<cmd>lua vim.lsp.buf.code_action()<CR>', opts)
   buf_set_keymap('n', 'gr', '<cmd>lua vim.lsp.buf.references()<CR>', opts)
-  buf_set_keymap('n', '<space>e', '<cmd>lua vim.lsp.diagnostic.show_line_diagnostics()<CR>', opts)
+  buf_set_keymap('n', '<space>e', '<cmd>lua vim.diagnostic.open_float()<CR>', opts)
   buf_set_keymap('n', '[d', '<cmd>lua vim.lsp.diagnostic.goto_prev()<CR>', opts)
   buf_set_keymap('n', ']d', '<cmd>lua vim.lsp.diagnostic.goto_next()<CR>', opts)
   buf_set_keymap('n', '<space>q', '<cmd>lua vim.lsp.diagnostic.set_loclist()<CR>', opts)
   buf_set_keymap('n', '<space>f', '<cmd>lua vim.lsp.buf.formatting()<CR>', opts)
 
+  require "lsp_signature".on_attach({
+    bind = true, -- This is mandatory, otherwise border config won't get registered.
+    floating_window = true,
+    floating_window_above_cur_line = true,
+    floating_window_off_x = 20,
+    doc_lines = 10,
+    hint_prefix = '👻 '
+  }, bufnr)  -- Note: add in lsp client on-attach
 end
+
+-- TS setup
+local buf_map = function(bufnr, mode, lhs, rhs, opts)
+    vim.api.nvim_buf_set_keymap(bufnr, mode, lhs, rhs, opts or {
+        silent = true,
+    })
+end
+
+nvim_lsp.tsserver.setup({
+    on_attach = function(client, bufnr)
+        client.server_capabilities.document_formatting = false
+        client.server_capabilities.document_range_formatting = false
+        local ts_utils = require("nvim-lsp-ts-utils")
+        ts_utils.setup({})
+        ts_utils.setup_client(client)
+        buf_map(bufnr, "n", "gs", ":TSLspOrganize<CR>")
+        buf_map(bufnr, "n", "gi", ":TSLspRenameFile<CR>")
+        buf_map(bufnr, "n", "go", ":TSLspImportAll<CR>")
+        on_attach(client, bufnr)
+    end,
+})
 
 -- Use a loop to conveniently call 'setup' on multiple servers and
 -- map buffer local keybindings when the language server attaches
-local servers = { 'rust_analyzer' }
+local servers = { 'pyright', 'rust_analyzer' }
 for _, lsp in ipairs(servers) do
   nvim_lsp[lsp].setup {
     on_attach = on_attach,
@@ -274,18 +324,56 @@ endfunction
 command! -bang -complete=buffer -nargs=? Bclose call <SID>Bclose(<q-bang>, <q-args>)
 nnoremap <silent> <Leader>bd :Bclose<CR>
 
-
 map gn :bn<cr>
 map gp :bp<cr>
 map gw :Bclose<cr>
 
-set colorcolumn=79
+" Run Python and C files by Ctrl+h
+autocmd FileType python map <buffer> <C-h> :w<CR>:exec '!python3.11' shellescape(@%, 1)<CR>
+autocmd FileType python imap <buffer> <C-h> <esc>:w<CR>:exec '!python3.11' shellescape(@%, 1)<CR>
 
-let g:NERDTreeChDirMode = 2  " Change cwd to parent node
+autocmd FileType c map <buffer> <C-h> :w<CR>:exec '!gcc' shellescape(@%, 1) '-o out; ./out'<CR>
+autocmd FileType c imap <buffer> <C-h> <esc>:w<CR>:exec '!gcc' shellescape(@%, 1) '-o out; ./out'<CR>
 
-let g:NERDTreeMinimalUI = 1  " Hide help text
-let g:NERDTreeAutoDeleteBuffer = 1
+autocmd FileType sh map <buffer> <C-h> :w<CR>:exec '!bash' shellescape(@%, 1)<CR>
+autocmd FileType sh imap <buffer> <C-h> <esc>:w<CR>:exec '!bash' shellescape(@%, 1)<CR>
 
-nnoremap <leader>n :NERDTreeToggle<CR>
-nnoremap <leader>N :NERDTreeFind<CR>
+autocmd FileType python set colorcolumn=79
 
+" let g:NERDTreeChDirMode = 2  " Change cwd to parent node
+
+" let g:NERDTreeMinimalUI = 1  " Hide help text
+" let g:NERDTreeAutoDeleteBuffer = 1
+
+" nnoremap <leader>n :NERDTreeToggle<CR>
+" nnoremap <leader>N :NERDTreeFind<CR>
+" nnoremap <leader>n :NERDTreeFocus<CR>
+" nnoremap <C-n> :NERDTree<CR>
+" nnoremap <C-t> :NERDTreeToggle<CR>
+" nnoremap <C-f> :NERDTreeFind<CR>
+
+tnoremap <Esc> <C-\><C-n>
+
+" Telescope bindings
+nnoremap ,ff <cmd>Telescope find_files<cr>
+nnoremap ,fg <cmd>Telescope live_grep<cr>
+
+" Go to next or prev tab by H and L accordingly
+nnoremap H gT
+nnoremap L gt
+
+" Autosave plugin
+
+" require("auto-save").setup({})
+
+" Telescope fzf plugin
+lua << EOF
+require('telescope').load_extension('fzf')
+EOF
+
+" White colors for LSP messages in code
+set termguicolors
+hi DiagnosticError guifg=White
+hi DiagnosticWarn  guifg=White
+hi DiagnosticInfo  guifg=White
+hi DiagnosticHint  guifg=White
